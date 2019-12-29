@@ -1,5 +1,4 @@
 from flask import Flask, request, abort
- 
 from linebot import (
     LineBotApi, WebhookHandler
 )
@@ -10,57 +9,51 @@ from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
 )
 import os
- 
+import wikipedia
+
 app = Flask(__name__)
- 
-#環境変数取得
-# LINE Developersで設定されているアクセストークンとChannel Secretをを取得し、設定します。
-YOUR_CHANNEL_ACCESS_TOKEN = os.environ["kJM83TrRxur8Pt0+xhIBVg/jqLvxvMwlz/jXVfSI9ZgTXRJ7wABL+jUJCnjQHG/vv3Nx2raYfDEDJ0+eHayKwvYtoHslWYzYqkKOvP82bSECmwIgTIwhUA0EU9XNJCaU0d8V6TQ1q9xVPvWqfHYT9gdB04t89/1O/w1cDnyilFU="]
-YOUR_CHANNEL_SECRET = os.environ["328c1ec54edfd0d11e365b370af880f2"]
- 
+wikipedia.set_lang("ja")
+
+YOUR_CHANNEL_ACCESS_TOKEN = os.environ["YOUR_CHANNEL_ACCESS_TOKEN"]
+YOUR_CHANNEL_SECRET = os.environ["YOUR_CHANNEL_SECRET"]
+
 line_bot_api = LineBotApi(YOUR_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(YOUR_CHANNEL_SECRET)
- 
- 
-## 1 ##
-#Webhookからのリクエストをチェックします。
+
 @app.route("/callback", methods=['POST'])
 def callback():
-    # リクエストヘッダーから署名検証のための値を取得します。
     signature = request.headers['X-Line-Signature']
- 
-    # リクエストボディを取得します。
     body = request.get_data(as_text=True)
     app.logger.info("Request body: " + body)
- 
-    # handle webhook body
-　# 署名を検証し、問題なければhandleに定義されている関数を呼び出す。
+
     try:
         handler.handle(body, signature)
-　# 署名検証で失敗した場合、例外を出す。
     except InvalidSignatureError:
         abort(400)
-　# handleの処理を終えればOK
     return 'OK'
- 
-## 2 ##
-###############################################
-#LINEのメッセージの取得と返信内容の設定(オウム返し)
-###############################################
- 
-#LINEでMessageEvent（普通のメッセージを送信された場合）が起こった場合に、
-#def以下の関数を実行します。
-#reply_messageの第一引数のevent.reply_tokenは、イベントの応答に用いるトークンです。 
-#第二引数には、linebot.modelsに定義されている返信用のTextSendMessageオブジェクトを渡しています。
- 
+
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
+    send_message = event.message.text
+    try:
+        wikipedia_page = wikipedia.page(send_message)
+        print(wikipedia_page)
+        wikipedia_title = wikipedia_page.title
+        wikipedia_url = wikipedia_page.url
+        wikipedia_summary = wikipedia.summary(send_message)
+        reply_message = '【' + wikipedia_title + '】\n' + wikipedia_summary + '\n\n' + '【詳しくはこちら】\n' + wikipedia_url
+    except wikipedia.exceptions.PageError:
+        reply_message = '【' + send_message + '】\nについての情報は見つかりませんでした。'
+    except wikipedia.exceptions.DisambiguationError as e:
+        disambiguation_list = e.options
+        reply_message = '複数の候補が返ってきました。以下の候補から、お探しの用語に近いものを再入力してください。\n\n'
+        for word in disambiguation_list:
+            reply_message += '・' + word + '\n'
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text=event.message.text)) #ここでオウム返しのメッセージを返します。
- 
-# ポート番号の設定
+        TextSendMessage(reply_message)
+    )
+
 if __name__ == "__main__":
-#    app.run()
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
